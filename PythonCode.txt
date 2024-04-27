@@ -1,0 +1,79 @@
+import pandas as pd
+from ast import literal_eval
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.neural_network import MLPRegressor
+from sklearn.metrics import mean_squared_error
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Step 1: Load and preprocess the data from data.csv
+data = pd.read_csv("data.csv")
+
+# Preprocess Price_Booking columns to extract numeric values
+price_booking_cols = [f"Price_Booking{i}" for i in range(1, 521)]
+for col in price_booking_cols:
+    data[col] = data[col].apply(lambda x: literal_eval(x)[0])  # Extract numeric value from tuple
+
+# Identify categorical columns
+categorical_cols = ['Size', 'Light']  # Assuming 'Size' and 'Light' are categorical columns
+
+# Drop irrelevant columns
+X = data.drop(columns=price_booking_cols)
+y = data[price_booking_cols[0]]  # Assuming we are predicting Price_Booking1
+
+# One-hot encode categorical columns
+preprocessor = ColumnTransformer(
+    transformers=[('cat', OneHotEncoder(), categorical_cols)],
+    remainder='passthrough')
+
+X = preprocessor.fit_transform(X)
+
+# Step 2: Train a neural network model to predict the optimal price for each billboard
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Define custom loss function (Mean Squared Error)
+def custom_loss(y_true, y_pred):
+    return np.mean(np.square(y_true - y_pred))
+
+# Initialize the neural network model
+model = MLPRegressor(hidden_layer_sizes=(100, 50), activation='relu', solver='adam', random_state=42, 
+                     learning_rate='adaptive', max_iter=1000, early_stopping=True, verbose=True)
+
+# Train the neural network model using gradient descent
+model.fit(X_train_scaled, y_train)
+
+# Step 3: Evaluate the model on the test set
+y_pred = model.predict(X_test_scaled)
+mse = mean_squared_error(y_test, y_pred)
+custom_mse = custom_loss(y_test, y_pred)
+print("Mean Squared Error:", mse)
+print("Custom Loss (MSE):", custom_mse)
+
+# Plot actual vs predicted prices
+plt.figure(figsize=(10, 6))
+plt.scatter(y_test, y_pred, color='blue', alpha=0.5)
+plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], linestyle='--', color='red')
+plt.title('Actual vs Predicted Prices')
+plt.xlabel('Actual Prices')
+plt.ylabel('Predicted Prices')
+plt.grid(True)
+plt.show()
+
+# Step 4: Use the trained model to predict the optimal prices for the first week of 2024
+benchmark_data = pd.read_csv("benchmark_data.csv")
+
+# Preprocess benchmark data
+for col in price_booking_cols:
+    benchmark_data[col] = benchmark_data[col].apply(lambda x: literal_eval(x)[0])
+
+benchmark_data = preprocessor.transform(benchmark_data)
+benchmark_data_scaled = scaler.transform(benchmark_data)
+optimal_prices = model.predict(benchmark_data_scaled)
+
+# Step 5: Save the predicted optimal prices to output_benchmark_data.csv
+pd.DataFrame(optimal_prices).to_csv("output_benchmark_data.csv", header=False, index=False)
